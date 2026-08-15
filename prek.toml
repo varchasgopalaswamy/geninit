@@ -1,0 +1,59 @@
+minimum_prek_version = "0.4.11"
+
+[[repos]]
+repo = "builtin"
+
+[[repos.hooks]]
+id = "check-added-large-files"
+
+[[repos.hooks]]
+id = "check-case-conflict"
+
+[[repos.hooks]]
+id = "check-illegal-windows-names"
+
+[[repos.hooks]]
+id = "check-merge-conflict"
+
+[[repos.hooks]]
+id = "check-symlinks"
+
+[[repos.hooks]]
+id = "check-toml"
+
+[[repos.hooks]]
+id = "detect-private-key"
+
+[[repos.hooks]]
+id = "end-of-file-fixer"
+
+[[repos.hooks]]
+id = "mixed-line-ending"
+args = ["--fix=lf"]
+
+[[repos.hooks]]
+id = "trailing-whitespace"
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "Ruff format"
+entry = "uv run --locked --no-sync ruff format --check"
+language = "system"
+types_or = ["python", "pyi"]
+
+[[repos.hooks]]
+id = "ruff-check"
+name = "Ruff lint"
+entry = "uv run --locked --no-sync ruff check --force-exclude"
+language = "system"
+types_or = ["python", "pyi"]
+
+[[repos.hooks]]
+id = "pyrefly"
+name = "Pyrefly"
+entry = "uv run --locked --no-sync pyrefly check"
+language = "system"
+types_or = ["python", "pyi"]
