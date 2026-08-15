@@ -13,6 +13,7 @@ ignore = [
     "ISC001",
     "C901", "PLR0912", # Function complexity is fake news
     "RET505", # I hate this
+    "CPY001",
 ]
 logger-objects = ["logging_setup.logger", "loguru.logger"]
 
