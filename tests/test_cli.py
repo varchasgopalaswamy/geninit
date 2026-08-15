@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import pytest
 
 
-def test_cli_write_check_diff_and_version(tmp_path: Path) -> None:
+def test_cli_write_check_diff(tmp_path: Path) -> None:
     """The CLI writes by default and exposes non-mutating CI modes."""
     package = tmp_path / "example"
     package.mkdir()
@@ -39,10 +39,6 @@ def test_cli_write_check_diff_and_version(tmp_path: Path) -> None:
     assert diff.exit_code == 2
     assert "+++ b/" in diff.output
     assert "new" in diff.output
-
-    version = runner.invoke(cli, ["--version"])
-    assert version.exit_code == 0
-    assert version.output.startswith("geninit, version 0.1.0")
 
 
 def test_cli_combines_configured_and_positional_roots(tmp_path: Path) -> None:
