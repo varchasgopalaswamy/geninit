@@ -62,6 +62,49 @@ def test_public_visibility_lifts_explicit_exports_and_can_be_eager(
     assert '__all__ = (\n    "api",\n    "Widget",\n)' in content
 
 
+def test_public_subpackage_propagates_its_generated_api(tmp_path: Path) -> None:
+    """Bottom-up planning lets a public subpackage lift its generated exports."""
+    package = tmp_path / "example"
+    subpackage = package / "features"
+    _module(subpackage / "api.py", '__all__ = ("Widget",)\nclass Widget: ...\n')
+    _managed_init(subpackage, '__public__ = ("api",)\n')
+    _managed_init(package, '__public__ = ("features",)\n')
+
+    generation = plan([package])
+    generation.write()
+
+    root_content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "lazy from . import features as features" in root_content
+    assert "lazy from .features import api as api" in root_content
+    assert "lazy from .features import Widget as Widget" in root_content
+    assert '__all__ = (\n    "features",\n    "api",\n    "Widget",\n)' in root_content
+
+
+def test_generation_preserves_content_outside_the_managed_block(tmp_path: Path) -> None:
+    """Regeneration replaces only the marked block, byte for byte."""
+    package = tmp_path / "example"
+    _module(package / "api.py", '__all__ = ("Widget",)\n')
+    before = (
+        '"""Handwritten package documentation."""\n\n'
+        '__public__ = ("api",)\n\n'
+        "# <autoinit>\n"
+        "stale = True\n"
+        "# </autoinit>\n\n"
+        "HANDWRITTEN = 42\n"
+    )
+    _module(package / "__init__.py", before)
+
+    plan([package]).write()
+
+    after = (package / "__init__.py").read_text(encoding="utf-8")
+    prefix, managed_and_suffix = after.split("# <autoinit>", maxsplit=1)
+    _, suffix = managed_and_suffix.split("# </autoinit>\n", maxsplit=1)
+    assert prefix == before.split("# <autoinit>", maxsplit=1)[0]
+    assert suffix == before.split("# </autoinit>\n", maxsplit=1)[1]
+    assert "stale = True" not in after
+    assert "lazy from .api import Widget as Widget" in after
+
+
 def test_exclusions_and_explicit_underscore_override(tmp_path: Path) -> None:
     """Configured globs prune trees while declarations may expose underscore names."""
     package = tmp_path / "example"
@@ -149,6 +192,25 @@ def test_stale_plan_refuses_every_write(tmp_path: Path) -> None:
         generation.write()
 
     assert init_path.read_text(encoding="utf-8") == "changed concurrently\n"
+
+
+def test_planning_all_roots_is_deterministic_and_all_or_nothing(tmp_path: Path) -> None:
+    """Root order is stable and a later failure leaves every root untouched."""
+    first = tmp_path / "alpha"
+    second = tmp_path / "beta"
+    _module(first / "api.py", "value = 1\n")
+    _module(second / "broken.py", "__all__ = make_exports()\n")
+
+    with pytest.raises(AnalysisError, match="__all__"):
+        plan([second, first])
+
+    assert not (first / "__init__.py").exists()
+    assert not (second / "__init__.py").exists()
+
+    (second / "broken.py").write_text("value = 2\n", encoding="utf-8")
+    generation = plan([second, first])
+    assert generation.roots == (first, second)
+    assert tuple(change.path.parent for change in generation.changes) == (first, second)
 
 
 @pytest.mark.parametrize(("eager", "loaded_immediately"), [((), False), (("api.py",), True)])
