@@ -22,6 +22,9 @@ id = "check-symlinks"
 id = "check-toml"
 
 [[repos.hooks]]
+id = "check-yaml"
+
+[[repos.hooks]]
 id = "detect-private-key"
 
 [[repos.hooks]]
