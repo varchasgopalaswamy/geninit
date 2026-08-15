@@ -6,13 +6,10 @@ __public__ = ("errors", "generator", "models")
 __private__ = ("cli", "config")
 
 # <geninit>
-lazy from . import errors as errors
-lazy from . import generator as generator
-lazy from . import models as models
-lazy from .errors import GenInitError as GenInitError
-lazy from .generator import plan as plan
-lazy from .models import Config as Config
-lazy from .models import GenerationPlan as GenerationPlan
+lazy from . import errors, generator, models
+lazy from .errors import GenInitError
+lazy from .generator import plan
+lazy from .models import Config, GenerationPlan
 
 __all__ = (
     "Config",

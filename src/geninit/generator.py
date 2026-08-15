@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 START_MARKER = "# <geninit>"
 END_MARKER = "# </geninit>"
 
+_LINE_LENGTH = 99
 _VISIBILITY_NAMES = ("__public__", "__protected__", "__private__")
 _IGNORED_DIRECTORIES = frozenset(
     {
@@ -323,15 +324,16 @@ def _render_package(
                 raise CollisionError(msg)
             origins[exported] = child.source
 
-    imports: list[str] = []
+    import_groups: dict[tuple[str, str], list[str]] = {}
     for child in exposed:
         eager = not use_lazy_imports or _matches(child.eager_path, eager_patterns)
         prefix = "" if eager else "lazy "
-        imports.append(f"{prefix}from . import {child.name} as {child.name}")
+        import_groups.setdefault((prefix, "."), []).append(child.name)
         if child.name in public:
-            imports.extend(
-                f"{prefix}from .{child.name} import {name} as {name}" for name in child.exports
-            )
+            import_groups[(prefix, f".{child.name}")] = list(child.exports)
+    imports = [
+        _render_import(prefix, module, names) for (prefix, module), names in import_groups.items()
+    ]
     imports.sort()
 
     module_exports = tuple(child.name for child in exposed)
@@ -345,6 +347,16 @@ def _render_package(
     lines.extend(_render_all(exports))
     lines.append(END_MARKER)
     return "\n".join(lines) + "\n", exports
+
+
+def _render_import(prefix: str, module: str, names: Sequence[str]) -> str:
+    names = sorted(names)
+    start = f"{prefix}from {module} import "
+    joined = ", ".join(names)
+    if len(start) + len(joined) <= _LINE_LENGTH:
+        return start + joined
+    body = "\n".join(f"    {name}," for name in names)
+    return f"{start}(\n{body}\n)"
 
 
 def _render_all(names: Sequence[str]) -> list[str]:

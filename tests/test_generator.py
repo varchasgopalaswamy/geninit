@@ -36,11 +36,10 @@ def test_recursive_generation_defaults_children_to_protected(tmp_path: Path) -> 
     generation.write()
     root_init = (package / "__init__.py").read_text(encoding="utf-8")
     nested_init = (package / "nested" / "__init__.py").read_text(encoding="utf-8")
-    assert "lazy from . import api as api" in root_init
-    assert "lazy from . import nested as nested" in root_init
+    assert "lazy from . import api, nested" in root_init
     assert "Widget" not in root_init
     assert "_hidden" not in root_init
-    assert "lazy from . import service as service" in nested_init
+    assert "lazy from . import service" in nested_init
     assert not plan(config=config).has_changes
 
 
@@ -60,8 +59,9 @@ def test_public_visibility_lifts_explicit_exports_and_can_be_eager(
     generation.write()
 
     content = (package / "__init__.py").read_text(encoding="utf-8")
-    assert "from . import api as api" in content
-    assert "from .api import Widget as Widget" in content
+    assert "from . import api" in content
+    assert "from .api import Widget" in content
+    assert " as " not in content
     assert "lazy " not in content
     assert "Internal" not in content
     assert '__all__ = (\n    "Widget",\n    "api",\n)' in content
@@ -81,9 +81,9 @@ def test_public_subpackage_propagates_its_generated_api(tmp_path: Path) -> None:
     generation.write()
 
     root_content = (package / "__init__.py").read_text(encoding="utf-8")
-    assert "lazy from . import features as features" in root_content
-    assert "lazy from .features import api as api" in root_content
-    assert "lazy from .features import Widget as Widget" in root_content
+    assert "lazy from . import features" in root_content
+    assert "lazy from .features import Widget, api" in root_content
+    assert " as " not in root_content
     assert '__all__ = (\n    "Widget",\n    "api",\n    "features",\n)' in root_content
 
 
@@ -111,7 +111,7 @@ def test_generation_preserves_content_outside_the_managed_block(tmp_path: Path) 
     assert prefix == before.split("# <geninit>", maxsplit=1)[0]
     assert suffix == before.split("# </geninit>\n", maxsplit=1)[1]
     assert "stale = True" not in after
-    assert "lazy from .api import Widget as Widget" in after
+    assert "lazy from .api import Widget" in after
 
 
 def test_exclusions_and_explicit_underscore_override(tmp_path: Path) -> None:
@@ -149,9 +149,9 @@ def test_private_visibility_hides_normal_child_and_publicizes_underscore_child(
 
     content = (package / "__init__.py").read_text(encoding="utf-8")
     assert "from . import api" not in content
-    assert "Widget as Widget" not in content
-    assert "lazy from . import _compat as _compat" in content
-    assert "lazy from ._compat import legacy as legacy" in content
+    assert "Widget" not in content
+    assert "lazy from . import _compat" in content
+    assert "lazy from ._compat import legacy" in content
     assert '__all__ = (\n    "_compat",\n    "legacy",\n)' in content
 
 
@@ -408,15 +408,15 @@ def test_generated_import_mode_follows_supported_python_versions(
     ).write()
 
     content = (package / "__init__.py").read_text(encoding="utf-8")
-    assert ("lazy from . import api as api" in content) is uses_lazy_imports
-    assert ("\nfrom . import api as api\n" in content) is not uses_lazy_imports
+    assert ("lazy from . import api" in content) is uses_lazy_imports
+    assert ("\nfrom . import api\n" in content) is not uses_lazy_imports
 
 
 @pytest.mark.parametrize(
     ("requires_python", "expected_import"),
     [
-        (">=3.14", "from . import api as api"),
-        (">=3.15", "lazy from . import api as api"),
+        (">=3.14", "from . import api"),
+        (">=3.15", "lazy from . import api"),
     ],
 )
 def test_project_metadata_controls_generated_import_mode(
