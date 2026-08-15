@@ -16,11 +16,11 @@ if TYPE_CHECKING:
 
 
 class _GenerationClickError(click.ClickException):
-    exit_code = 1
+    exit_code = 3
 
 
 class _UsageClickError(click.UsageError):
-    exit_code = 1
+    exit_code = 2
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
