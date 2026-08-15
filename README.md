@@ -187,7 +187,8 @@ configuration-only changes are noticed too.
 
 If the hook updates anything, review the changes, stage them, and commit again.
 
-If you are using `ruff` to format and lint your code, be sure to put `geninit` before `ruff`.
+If you are using `ruff` to format and lint your code, be sure to put `geninit` before `ruff` in pre-commit. Then, make sure ruff is available in the hook environment so that geninit can use the target project's
+Ruff configuration to format and sort the generated section.
 
 ## CI example
 

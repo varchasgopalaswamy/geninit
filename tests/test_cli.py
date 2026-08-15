@@ -68,6 +68,7 @@ def test_cli_combines_configured_and_positional_roots(tmp_path: Path) -> None:
 def test_main_reports_generation_and_usage_errors(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The installed entry point maps generation and invocation errors to one."""
     package = tmp_path / "example"
@@ -93,6 +94,23 @@ def test_main_reports_generation_and_usage_errors(
     (invalid_utf8 / "api.py").write_bytes(b"\xff")
     assert main([str(invalid_utf8)]) == 1
     assert "cannot decode Python source as UTF-8" in capsys.readouterr().err
+
+    executable_directory = tmp_path / "bin"
+    executable_directory.mkdir()
+    ruff = executable_directory / "ruff"
+    ruff.write_text(
+        "#!/bin/sh\necho 'Ruff normalization failed' >&2\nexit 7\n",
+        encoding="utf-8",
+    )
+    ruff.chmod(0o755)
+    monkeypatch.setenv("PATH", str(executable_directory))
+    ruff_failure = tmp_path / "ruff_failure"
+    ruff_failure.mkdir()
+    (ruff_failure / "api.py").write_text("value = 1\n", encoding="utf-8")
+
+    assert main([str(ruff_failure)]) == 1
+    assert "Ruff normalization failed" in capsys.readouterr().err
+    assert not (ruff_failure / "__init__.py").exists()
 
 
 def test_main_returns_documented_exit_codes(

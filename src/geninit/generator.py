@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import keyword
 import os
 from pathlib import Path, PurePosixPath
+import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 from geninit.config import load_config, supports_native_lazy_imports
@@ -26,7 +28,6 @@ if TYPE_CHECKING:
 START_MARKER = "# <geninit>"
 END_MARKER = "# </geninit>"
 
-_LINE_LENGTH = 99
 _VISIBILITY_NAMES = ("__public__", "__protected__", "__private__")
 _IGNORED_DIRECTORIES = frozenset(
     {
@@ -324,16 +325,13 @@ def _render_package(
                 raise CollisionError(msg)
             origins[exported] = child.source
 
-    import_groups: dict[tuple[str, str], list[str]] = {}
+    imports: list[str] = []
     for child in exposed:
         eager = not use_lazy_imports or _matches(child.eager_path, eager_patterns)
         prefix = "" if eager else "lazy "
-        import_groups.setdefault((prefix, "."), []).append(child.name)
+        imports.append(f"{prefix}from . import {child.name}")
         if child.name in public:
-            import_groups[(prefix, f".{child.name}")] = list(child.exports)
-    imports = [
-        _render_import(prefix, module, names) for (prefix, module), names in import_groups.items()
-    ]
+            imports.extend(f"{prefix}from .{child.name} import {name}" for name in child.exports)
     imports.sort()
 
     module_exports = tuple(child.name for child in exposed)
@@ -346,17 +344,65 @@ def _render_package(
         lines.append("")
     lines.extend(_render_all(exports))
     lines.append(END_MARKER)
-    return "\n".join(lines) + "\n", exports
+    generated = "\n".join(lines) + "\n"
+    ruff = shutil.which("ruff")
+    if ruff is not None:
+        generated = _normalize_with_ruff(generated, init_path, ruff)
+    return generated, exports
 
 
-def _render_import(prefix: str, module: str, names: Sequence[str]) -> str:
-    names = sorted(names)
-    start = f"{prefix}from {module} import "
-    joined = ", ".join(names)
-    if len(start) + len(joined) <= _LINE_LENGTH:
-        return start + joined
-    body = "\n".join(f"    {name}," for name in names)
-    return f"{start}(\n{body}\n)"
+def _normalize_with_ruff(source: str, path: Path, ruff: str) -> str:
+    checked = _run_ruff(
+        source,
+        path,
+        ruff,
+        "organize imports and __all__",
+        ("check", "--select", "I001,RUF022", "--fix-only"),
+    )
+    return _run_ruff(checked, path, ruff, "format", ("format",))
+
+
+def _run_ruff(
+    source: str,
+    path: Path,
+    ruff: str,
+    operation: str,
+    arguments: tuple[str, ...],
+) -> str:
+    command = (
+        ruff,
+        *arguments,
+        "--no-cache",
+        "--color",
+        "never",
+        "--stdin-filename",
+        str(path),
+        "-",
+    )
+    try:
+        completed = subprocess.run(  # noqa: S603 -- Ruff is resolved to an absolute path.
+            command,
+            input=source,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as error:
+        msg = f"{path}: Ruff could not {operation}: timed out"
+        raise AnalysisError(msg) from error
+    except OSError as error:
+        msg = f"{path}: Ruff could not {operation}: {error}"
+        raise AnalysisError(msg) from error
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        suffix = f": {detail}" if detail else ""
+        msg = f"{path}: Ruff could not {operation}{suffix}"
+        raise AnalysisError(msg)
+    if completed.stdout.count(START_MARKER) != 1 or completed.stdout.count(END_MARKER) != 1:
+        msg = f"{path}: Ruff returned invalid generated content while attempting to {operation}"
+        raise AnalysisError(msg)
+    return completed.stdout
 
 
 def _render_all(names: Sequence[str]) -> list[str]:

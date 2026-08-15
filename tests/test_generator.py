@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,6 +17,9 @@ from geninit.errors import (
     ConfigurationError,
     OwnershipError,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_recursive_generation_defaults_children_to_protected(tmp_path: Path) -> None:
@@ -441,7 +444,12 @@ def test_project_metadata_controls_generated_import_mode(
 
 
 def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
-    """Generated blocks already satisfy the subsequent Ruff hooks."""
+    """Available Ruff normalizes blocks with the target project's settings."""
+    config = tmp_path / "ruff.toml"
+    config.write_text(
+        'target-version = "py315"\nline-length = 20\n\n[lint]\nselect = ["I001", "RUF022"]\n',
+        encoding="utf-8",
+    )
     package = tmp_path / "example"
     _module(
         package / "api.py",
@@ -453,7 +461,7 @@ def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
     )
     _managed_init(
         package,
-        '"""Example package."""\n\n__public__ = ("api", "other")\n',
+        '"""Example package."""\n\n__public__ = (\n    "api",\n    "other",\n)\n',
     )
     generated_package = tmp_path / "generated"
     _module(generated_package / "module.py", "value = 1\n")
@@ -464,6 +472,9 @@ def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
         )
     ).write()
     init_paths = (package / "__init__.py", generated_package / "__init__.py")
+    package_content = init_paths[0].read_text(encoding="utf-8")
+    assert "from . import (\n    api,\n    other,\n)" in package_content
+    assert " as " not in package_content
     assert (
         init_paths[1]
         .read_text(encoding="utf-8")
@@ -475,7 +486,6 @@ def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
     )
     ruff = shutil.which("ruff")
     assert ruff is not None
-    config = Path(__file__).parents[1] / "ruff.toml"
 
     for arguments in (("format", "--check"), ("check",)):
         completed = subprocess.run(  # noqa: S603 -- Ruff is resolved from the locked environment.
@@ -491,6 +501,48 @@ def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
             text=True,
         )
         assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_generation_has_deterministic_fallback_without_ruff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruff is optional and its absence leaves valid deterministic imports."""
+    monkeypatch.setenv("PATH", "")
+    package = tmp_path / "example"
+    _module(package / "api.py", "value = 1\n")
+    _module(package / "models.py", "value = 2\n")
+    config = Config(roots=(package,), requires_python=">=3.14")
+
+    plan(config=config).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "from . import api\nfrom . import models\n" in content
+    assert " as " not in content
+    assert not plan(config=config).has_changes
+
+
+def test_ruff_failure_aborts_generation_before_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken discovered Ruff executable fails planning without partial files."""
+    executable_directory = tmp_path / "bin"
+    executable_directory.mkdir()
+    ruff = executable_directory / "ruff"
+    ruff.write_text(
+        "#!/bin/sh\necho 'deliberate Ruff failure' >&2\nexit 7\n",
+        encoding="utf-8",
+    )
+    ruff.chmod(0o755)
+    monkeypatch.setenv("PATH", str(executable_directory))
+    package = tmp_path / "example"
+    _module(package / "api.py", "value = 1\n")
+
+    with pytest.raises(AnalysisError, match="deliberate Ruff failure"):
+        plan([package])
+
+    assert not (package / "__init__.py").exists()
 
 
 def _module(path: Path, source: str) -> Path:
