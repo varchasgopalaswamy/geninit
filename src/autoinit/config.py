@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import tomllib
 from typing import TYPE_CHECKING, Any
@@ -121,4 +122,6 @@ def _string_list(
 
 def _absolute_path(base: Path, value: str) -> Path:
     path = Path(value).expanduser()
-    return path.resolve() if path.is_absolute() else (base / path).resolve()
+    candidate = path if path.is_absolute() else base / path
+    # ``Path.resolve()`` would hide a final-component package-root symlink.
+    return Path(os.path.abspath(candidate))  # noqa: PTH100

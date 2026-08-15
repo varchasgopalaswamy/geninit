@@ -91,7 +91,7 @@ def plan(
     resolved_config = config or load_config(config_path, start=start)
     requested = (
         *resolved_config.roots,
-        *(Path(root).expanduser().resolve() for root in roots),
+        *(_absolute_root(root) for root in roots),
     )
     resolved_roots = _unique_roots(requested)
     if not resolved_roots:
@@ -106,13 +106,13 @@ def plan(
 
 
 def _unique_roots(roots: Sequence[Path]) -> tuple[Path, ...]:
-    unique = tuple(dict.fromkeys(root.resolve() for root in roots))
+    unique = tuple(dict.fromkeys(_absolute_root(root) for root in roots))
     for root in unique:
-        if not root.is_dir():
-            msg = f"{root}: package root is not a directory"
-            raise ConfigurationError(msg)
         if root.is_symlink():
             msg = f"{root}: package root cannot be a symbolic link"
+            raise ConfigurationError(msg)
+        if not root.is_dir():
+            msg = f"{root}: package root is not a directory"
             raise ConfigurationError(msg)
         _validate_module_name(root.name, root)
     ordered = tuple(sorted(unique, key=lambda path: path.as_posix()))
@@ -136,7 +136,7 @@ def _plan_root(root: Path, config: Config) -> list[FileChange]:
         ),
     ):
         init_path = package.path / "__init__.py"
-        before = init_path.read_text(encoding="utf-8") if init_path.exists() else None
+        before = _read_initializer(init_path)
         handwritten = _handwritten_source(init_path, before)
         visibility = {
             name: _literal_names(handwritten, init_path, name) for name in _VISIBILITY_NAMES
@@ -156,7 +156,11 @@ def _plan_root(root: Path, config: Config) -> list[FileChange]:
 
 def _discover_packages(root: Path, exclude: Sequence[str]) -> tuple[_Package, ...]:
     python_files: dict[Path, tuple[Path, ...]] = {}
-    for current, directory_names, file_names in os.walk(root, topdown=True):
+    for current, directory_names, file_names in os.walk(
+        root,
+        topdown=True,
+        onerror=_raise_discovery_error,
+    ):
         directory = Path(current)
         relative_directory = directory.relative_to(root)
         kept_directories: list[str] = []
@@ -226,7 +230,7 @@ def _children_for(
     children: list[_Child] = []
     for module in package.modules:
         exports = _literal_names(
-            module.read_text(encoding="utf-8"),
+            _read_module(module),
             module,
             "__all__",
         )
@@ -463,6 +467,42 @@ def _validate_module_name(name: str, path: Path) -> None:
     if not name.isidentifier() or keyword.iskeyword(name):
         msg = f"{path}: {name!r} is not a valid Python module name"
         raise AnalysisError(msg)
+
+
+def _absolute_root(root: str | Path) -> Path:
+    # ``Path.resolve()`` would hide a final-component package-root symlink.
+    return Path(os.path.abspath(Path(root).expanduser()))  # noqa: PTH100
+
+
+def _read_initializer(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except UnicodeDecodeError as error:
+        msg = f"{path}: cannot decode package initializer as UTF-8: {error}"
+        raise AnalysisError(msg) from error
+    except OSError as error:
+        msg = f"{path}: cannot read package initializer: {error}"
+        raise AnalysisError(msg) from error
+
+
+def _read_module(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        msg = f"{path}: cannot decode Python source as UTF-8: {error}"
+        raise AnalysisError(msg) from error
+    except OSError as error:
+        msg = f"{path}: cannot read Python source: {error}"
+        raise AnalysisError(msg) from error
+
+
+def _raise_discovery_error(error: OSError) -> None:
+    path = Path(error.filename) if error.filename is not None else None
+    location = f"{path}: " if path is not None else ""
+    msg = f"{location}cannot discover Python packages: {error}"
+    raise AnalysisError(msg) from error
 
 
 def _matches(path: str, patterns: Sequence[str], *, directory: bool = False) -> bool:

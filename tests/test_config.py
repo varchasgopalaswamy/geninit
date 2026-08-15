@@ -64,3 +64,32 @@ def test_load_config_rejects_invalid_options(
 def test_load_config_without_project_returns_defaults(tmp_path: Path) -> None:
     """Library callers may supply roots without a project configuration."""
     assert load_config(start=tmp_path) == Config()
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("tool = []\n", "[tool] must be a table"),
+        ("[tool]\nautoinit = []\n", "[tool.autoinit] must be a table"),
+        ('[tool.autoinit]\nroots = [""]\n', "entries must be nonempty POSIX paths"),
+    ],
+)
+def test_load_config_rejects_invalid_table_shapes(
+    tmp_path: Path,
+    content: str,
+    message: str,
+) -> None:
+    """Configuration tables and path values retain strict shapes."""
+    project = tmp_path / "pyproject.toml"
+    project.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match=re.escape(message)):
+        load_config(project)
+
+
+def test_load_config_rejects_missing_explicit_file(tmp_path: Path) -> None:
+    """An explicit missing configuration path is never silently ignored."""
+    missing = tmp_path / "missing.toml"
+
+    with pytest.raises(ConfigurationError, match="configuration file does not exist"):
+        load_config(missing)

@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autoinit import Config, plan
-from autoinit.errors import AnalysisError, CollisionError, OwnershipError
+from autoinit.errors import (
+    AnalysisError,
+    CollisionError,
+    ConfigurationError,
+    OwnershipError,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -122,6 +127,46 @@ def test_exclusions_and_explicit_underscore_override(tmp_path: Path) -> None:
     assert not (package / "tests" / "__init__.py").exists()
 
 
+def test_private_visibility_hides_normal_child_and_publicizes_underscore_child(
+    tmp_path: Path,
+) -> None:
+    """Explicit declarations override both visibility defaults."""
+    package = tmp_path / "example"
+    _module(package / "api.py", '__all__ = ("Widget",)\n')
+    _module(package / "_compat.py", '__all__ = ("legacy",)\n')
+    _managed_init(
+        package,
+        '__public__ = ("_compat",)\n__private__ = ("api",)\n',
+    )
+
+    plan([package]).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "from . import api" not in content
+    assert "Widget as Widget" not in content
+    assert "lazy from . import _compat as _compat" in content
+    assert "lazy from ._compat import legacy as legacy" in content
+    assert '__all__ = (\n    "_compat",\n    "legacy",\n)' in content
+
+
+def test_discovery_ignores_standard_directories_and_directory_symlinks(
+    tmp_path: Path,
+) -> None:
+    """Discovery never follows generated trees or directory symlinks."""
+    package = tmp_path / "example"
+    external = tmp_path / "external"
+    _module(package / "api.py", "value = 1\n")
+    _module(package / "build" / "generated.py", "value = 2\n")
+    _module(external / "linked.py", "value = 3\n")
+    (package / "linked").symlink_to(external, target_is_directory=True)
+
+    plan([package]).write()
+
+    assert (package / "__init__.py").is_file()
+    assert not (package / "build" / "__init__.py").exists()
+    assert not (external / "__init__.py").exists()
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -150,6 +195,49 @@ def test_unmanaged_nonempty_init_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(OwnershipError, match="nonempty files"):
         plan([package])
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("# <autoinit>\n__all__ = ()\n", "must contain exactly one"),
+        ("# </autoinit>\n# <autoinit>\n", "markers are out of order"),
+    ],
+)
+def test_malformed_managed_markers_are_rejected(
+    tmp_path: Path,
+    source: str,
+    message: str,
+) -> None:
+    """Incomplete or reversed ownership markers cannot authorize a rewrite."""
+    package = tmp_path / "example"
+    _module(package / "api.py", "value = 1\n")
+    _module(package / "__init__.py", source)
+
+    with pytest.raises(OwnershipError, match=message):
+        plan([package])
+
+
+def test_invalid_utf8_and_initializer_directories_report_analysis_errors(
+    tmp_path: Path,
+) -> None:
+    """Unreadable Python inputs fail with paths and domain-specific errors."""
+    invalid_source = tmp_path / "invalid_source"
+    invalid_source.mkdir()
+    (invalid_source / "api.py").write_bytes(b"\xff")
+
+    with pytest.raises(AnalysisError, match=r"api\.py: cannot decode Python source as UTF-8"):
+        plan([invalid_source])
+
+    invalid_initializer = tmp_path / "invalid_initializer"
+    _module(invalid_initializer / "api.py", "value = 1\n")
+    (invalid_initializer / "__init__.py").mkdir()
+
+    with pytest.raises(
+        AnalysisError,
+        match=r"__init__\.py: cannot read package initializer",
+    ):
+        plan([invalid_initializer])
 
 
 def test_visibility_errors_and_export_collisions(tmp_path: Path) -> None:
@@ -211,6 +299,29 @@ def test_planning_all_roots_is_deterministic_and_all_or_nothing(tmp_path: Path) 
     generation = plan([second, first])
     assert generation.roots == (first, second)
     assert tuple(change.path.parent for change in generation.changes) == (first, second)
+
+
+def test_symlink_overlapping_and_invalid_roots_are_rejected(tmp_path: Path) -> None:
+    """Root validation rejects ambiguous and non-importable package layouts."""
+    package = tmp_path / "example"
+    nested = package / "nested"
+    nested.mkdir(parents=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(package, target_is_directory=True)
+
+    with pytest.raises(ConfigurationError, match="symbolic link"):
+        plan([alias])
+    with pytest.raises(ConfigurationError, match="overlapping package roots"):
+        plan([package, nested])
+
+    invalid_package = tmp_path / "not-valid"
+    invalid_package.mkdir()
+    with pytest.raises(AnalysisError, match="not a valid Python module name"):
+        plan([invalid_package])
+
+    _module(package / "not-valid.py", "value = 1\n")
+    with pytest.raises(AnalysisError, match="not a valid Python module name"):
+        plan([package])
 
 
 @pytest.mark.parametrize(("eager", "loaded_immediately"), [((), False), (("api.py",), True)])

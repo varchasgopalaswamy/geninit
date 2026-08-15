@@ -85,14 +85,31 @@ class GenerationPlan:
         """
         changed = self.changed_files
         for change in changed:
-            current = change.path.read_text(encoding="utf-8") if change.path.exists() else None
+            current = _current_contents(change.path)
             if current != change.before:
                 msg = f"{change.path}: file changed after the generation plan was created"
                 raise OwnershipError(msg)
 
         for change in changed:
-            _atomic_write(change)
+            try:
+                _atomic_write(change)
+            except OSError as error:
+                msg = f"{change.path}: cannot write package initializer: {error}"
+                raise OwnershipError(msg) from error
         return tuple(change.path for change in changed)
+
+
+def _current_contents(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except UnicodeDecodeError as error:
+        msg = f"{path}: cannot decode package initializer as UTF-8: {error}"
+        raise OwnershipError(msg) from error
+    except OSError as error:
+        msg = f"{path}: cannot read package initializer: {error}"
+        raise OwnershipError(msg) from error
 
 
 def _atomic_write(change: FileChange) -> None:

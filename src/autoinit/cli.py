@@ -16,7 +16,11 @@ if TYPE_CHECKING:
 
 
 class _GenerationClickError(click.ClickException):
-    exit_code = 2
+    exit_code = 1
+
+
+class _UsageClickError(click.UsageError):
+    exit_code = 1
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
@@ -27,7 +31,7 @@ class _GenerationClickError(click.ClickException):
         path_type=Path,
         exists=True,
         file_okay=False,
-        resolve_path=True,
+        resolve_path=False,
     ),
 )
 @click.option(
@@ -70,14 +74,14 @@ def cli(
     """Generate managed package initializers beneath ROOTS."""
     if check and show_diff:
         msg = "--check and --diff are mutually exclusive"
-        raise click.UsageError(msg)
+        raise _UsageClickError(msg)
     try:
         generation = plan(roots, config_path=config)
         changed = generation.changed_files
         if show_diff:
             click.echo("".join(change.diff() for change in changed), nl=False)
             if changed:
-                raise click.exceptions.Exit(1)
+                raise click.exceptions.Exit(2)
             return
         if check:
             for change in changed:
@@ -86,7 +90,7 @@ def cli(
                     err=True,
                 )
             if changed:
-                raise click.exceptions.Exit(1)
+                raise click.exceptions.Exit(2)
             if verbose:
                 click.echo("all package initializers are current", err=True)
             return
@@ -94,7 +98,9 @@ def cli(
         written = generation.write()
         for path in written:
             click.echo(f"updated {_display_path(path)}")
-        if not written and verbose:
+        if written:
+            raise click.exceptions.Exit(2)
+        if verbose:
             click.echo("all package initializers are current")
     except AutoInitError as error:
         raise _GenerationClickError(str(error)) from error
@@ -107,17 +113,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: Arguments excluding the executable name. Defaults to ``sys.argv``.
 
     Returns:
-        Zero on success, one for stale generated files, or two for usage and
-        generation errors.
+        Zero when generation succeeds without changes, one for generation or
+        invocation failures, or two when files were changed or would change.
     """
     try:
-        cli.main(args=argv, prog_name="autoinit", standalone_mode=False)
+        result = cli.main(args=argv, prog_name="autoinit", standalone_mode=False)
     except click.ClickException as error:
         error.show()
-        return error.exit_code
+        return 1
     except click.exceptions.Exit as error:
         return error.exit_code
-    return 0
+    return result if isinstance(result, int) else 0
 
 
 def _display_path(path: Path) -> str:
