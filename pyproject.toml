@@ -5,9 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.15"
+requires-python = ">=3.14"
 dependencies = [
     "click>=8.4.2",
+    "packaging>=26.3",
 ]
 
 [project.scripts]
@@ -27,7 +28,7 @@ link-mode = "copy"
 [tool.pyrefly]
 project-includes = ["src/**/*.py", "tests/**/*.py"]
 search-path = ["src"]
-python-version = "3.15"
+python-version = "3.14"
 
 [tool.pytest.ini_options]
 addopts = [

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autoinit import Config
-from autoinit.config import load_config
+from autoinit.config import load_config, supports_native_lazy_imports
 from autoinit.errors import ConfigurationError
 
 if TYPE_CHECKING:
@@ -22,6 +22,9 @@ def test_load_config_resolves_values_relative_to_project(tmp_path: Path) -> None
     project = tmp_path / "pyproject.toml"
     project.write_text(
         """
+[project]
+requires-python = ">=3.15"
+
 [tool.autoinit]
 roots = ["src/example"]
 exclude = ["**/tests/**"]
@@ -37,6 +40,7 @@ eager = ["core.py"]
         roots=(package,),
         exclude=("**/tests/**",),
         eager=("core.py",),
+        requires_python=">=3.15",
     )
 
 
@@ -71,6 +75,15 @@ def test_load_config_without_project_returns_defaults(tmp_path: Path) -> None:
     [
         ("tool = []\n", "[tool] must be a table"),
         ("[tool]\nautoinit = []\n", "[tool.autoinit] must be a table"),
+        ("project = []\n", "[project] must be a table"),
+        (
+            "[project]\nrequires-python = []\n",
+            "project.requires-python must be a string",
+        ),
+        (
+            '[project]\nrequires-python = "not a specifier"\n',
+            "project.requires-python is not a valid version specifier",
+        ),
         ('[tool.autoinit]\nroots = [""]\n', "entries must be nonempty POSIX paths"),
     ],
 )
@@ -93,3 +106,25 @@ def test_load_config_rejects_missing_explicit_file(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="configuration file does not exist"):
         load_config(missing)
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "expected"),
+    [
+        (None, False),
+        (">=3.14", False),
+        (">=3.14,<4", False),
+        ("~=3.14", False),
+        (">=3.15", True),
+        (">=3.15,<4", True),
+        ("~=3.15", True),
+        ("==3.15.*", True),
+        (">=4", True),
+    ],
+)
+def test_native_lazy_import_support_follows_python_constraint(
+    requires_python: str | None,
+    expected: bool,
+) -> None:
+    """Only constraints proving a Python 3.15 floor permit lazy syntax."""
+    assert supports_native_lazy_imports(requires_python) is expected

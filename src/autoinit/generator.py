@@ -9,7 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from autoinit.config import load_config
+from autoinit.config import load_config, supports_native_lazy_imports
 from autoinit.errors import (
     AnalysisError,
     CollisionError,
@@ -98,9 +98,19 @@ def plan(
         msg = "no package roots supplied; configure tool.autoinit.roots or pass a path"
         raise ConfigurationError(msg)
 
+    use_lazy_imports = supports_native_lazy_imports(
+        resolved_config.requires_python,
+        path=resolved_config.project_file,
+    )
     changes: list[FileChange] = []
     for root in resolved_roots:
-        changes.extend(_plan_root(root, resolved_config))
+        changes.extend(
+            _plan_root(
+                root,
+                resolved_config,
+                use_lazy_imports=use_lazy_imports,
+            )
+        )
     changes.sort(key=lambda change: change.path.as_posix())
     return GenerationPlan(roots=resolved_roots, changes=tuple(changes))
 
@@ -124,7 +134,12 @@ def _unique_roots(roots: Sequence[Path]) -> tuple[Path, ...]:
     return ordered
 
 
-def _plan_root(root: Path, config: Config) -> list[FileChange]:
+def _plan_root(
+    root: Path,
+    config: Config,
+    *,
+    use_lazy_imports: bool,
+) -> list[FileChange]:
     packages = _discover_packages(root, config.exclude)
     exports_by_package: dict[Path, tuple[str, ...]] = {}
     changes: list[FileChange] = []
@@ -147,6 +162,7 @@ def _plan_root(root: Path, config: Config) -> list[FileChange]:
             children,
             visibility,
             config.eager,
+            use_lazy_imports=use_lazy_imports,
         )
         after = _replace_managed(init_path, before, generated)
         exports_by_package[package.path] = exports
@@ -259,6 +275,8 @@ def _render_package(
     children: Sequence[_Child],
     visibility: dict[str, tuple[str, ...]],
     eager_patterns: Sequence[str],
+    *,
+    use_lazy_imports: bool,
 ) -> tuple[str, tuple[str, ...]]:
     child_by_name = {child.name: child for child in children}
     known = set(child_by_name)
@@ -305,7 +323,8 @@ def _render_package(
 
     imports: list[str] = []
     for child in exposed:
-        prefix = "" if _matches(child.eager_path, eager_patterns) else "lazy "
+        eager = not use_lazy_imports or _matches(child.eager_path, eager_patterns)
+        prefix = "" if eager else "lazy "
         imports.append(f"{prefix}from . import {child.name} as {child.name}")
         if child.name in public:
             imports.extend(

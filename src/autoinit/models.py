@@ -21,12 +21,14 @@ class Config:
         roots: Package roots processed when the caller supplies no extra roots.
         exclude: Root-relative path globs omitted from discovery.
         eager: Root-relative module globs imported eagerly.
+        requires_python: Target project's PEP 440 Python version constraint.
     """
 
     project_file: Path | None = None
     roots: tuple[Path, ...] = ()
     exclude: tuple[str, ...] = ()
     eager: tuple[str, ...] = ()
+    requires_python: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

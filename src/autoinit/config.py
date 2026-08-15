@@ -7,11 +7,16 @@ from pathlib import Path
 import tomllib
 from typing import TYPE_CHECKING, Any
 
+from packaging.specifiers import InvalidSpecifier, Specifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
 from autoinit.errors import ConfigurationError
 from autoinit.models import Config
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+_NATIVE_LAZY_IMPORT_VERSION = Version("3.15")
 
 
 def load_config(
@@ -43,13 +48,17 @@ def load_config(
         msg = f"{project_file}: cannot read configuration: {error}"
         raise ConfigurationError(msg) from error
 
+    requires_python = _requires_python(project_file, document)
     tool = document.get("tool", {})
     if not isinstance(tool, dict):
         msg = f"{project_file}: [tool] must be a table"
         raise ConfigurationError(msg)
     raw = tool.get("autoinit")
     if raw is None:
-        return Config(project_file=project_file)
+        return Config(
+            project_file=project_file,
+            requires_python=requires_python,
+        )
     if not isinstance(raw, dict):
         msg = f"{project_file}: [tool.autoinit] must be a table"
         raise ConfigurationError(msg)
@@ -68,7 +77,64 @@ def load_config(
         roots=roots,
         exclude=exclude,
         eager=eager,
+        requires_python=requires_python,
     )
+
+
+def supports_native_lazy_imports(
+    requires_python: str | None,
+    *,
+    path: Path | None = None,
+) -> bool:
+    """Return whether a Python constraint proves support starts at 3.15.
+
+    Args:
+        requires_python: PEP 440 constraint from ``project.requires-python``.
+        path: Optional configuration path included in validation errors.
+
+    Returns:
+        Whether native lazy-import syntax is safe for every supported version.
+
+    Raises:
+        ConfigurationError: If the constraint is not valid PEP 440 syntax.
+    """
+    if requires_python is None:
+        return False
+    try:
+        specifiers = SpecifierSet(requires_python)
+    except InvalidSpecifier as error:
+        location = f"{path}: " if path is not None else ""
+        msg = f"{location}project.requires-python is not a valid version specifier: {error}"
+        raise ConfigurationError(msg) from error
+    return any(_requires_python_315(specifier) for specifier in specifiers)
+
+
+def _requires_python_315(specifier: Specifier) -> bool:
+    if specifier.operator not in {"===", "==", ">", ">=", "~="}:
+        return False
+    version_text = specifier.version.removesuffix(".*")
+    try:
+        version = Version(version_text)
+    except InvalidVersion:
+        return False
+    return version >= _NATIVE_LAZY_IMPORT_VERSION
+
+
+def _requires_python(path: Path, document: Mapping[str, Any]) -> str | None:
+    project = document.get("project")
+    if project is None:
+        return None
+    if not isinstance(project, dict):
+        msg = f"{path}: [project] must be a table"
+        raise ConfigurationError(msg)
+    value = project.get("requires-python")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"{path}: project.requires-python must be a string"
+        raise ConfigurationError(msg)
+    supports_native_lazy_imports(value, path=path)
+    return value
 
 
 def _resolve_project_file(

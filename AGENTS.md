@@ -5,7 +5,7 @@
 - Read `PLAN.md` before making architectural or behavioral changes. Treat it as
   the current product specification unless the user explicitly changes a
   decision.
-- Target Python 3.15 and newer only. Do not add compatibility code, syntax
+- Target Python 3.14 and newer only. Do not add compatibility code, syntax
   fallbacks, or tests for earlier Python versions.
 - Keep the implementation small, direct, and elegant. Prefer a clear function
   or dataclass over a framework, abstraction layer, or speculative extension
@@ -29,21 +29,21 @@
 - Before implementing a feature that could reasonably use a third-party
   package, present the package and its tradeoffs to the user. Do not silently
   reinvent substantial third-party functionality or silently add a dependency.
-- Keep runtime dependencies at zero unless the user approves an exception.
-  Development dependencies for the agreed toolchain are allowed.
+- Keep runtime dependencies limited to the user-approved Click and packaging
+  libraries. Development dependencies for the agreed toolchain are allowed.
 
 ## Python style and design
 
-- Use Ruff as both formatter and linter, with an 88-character line length,
-  Python 3.15 as the target, and `lint.select = ["ALL"]`.
+- Use Ruff as both formatter and linter, with the checked-in line length,
+  Python 3.14 as the target, and `lint.select = ["ALL"]`.
 - Prefer double-quoted strings and Google-style docstrings. Document every
   public module, class, function, method, and exception where its purpose is
   not self-evident.
 - Fully annotate public APIs. Keep internal annotations precise enough for
   Pyrefly to check without suppressions or broad `Any` types.
-- Use modern Python 3.15 language and standard-library features when they make
-  the code simpler. In generated files, use native `lazy` imports as specified
-  in `PLAN.md`.
+- Use modern Python 3.14 language and standard-library features when they make
+  the code simpler. In generated files, use native `lazy` imports only when the
+  target project's Python constraint permits them, as specified in `PLAN.md`.
 - Prefer immutable data, pure analysis functions, explicit inputs and outputs,
   and deterministic ordering. Keep filesystem writes separated from discovery,
   parsing, validation, and rendering.
@@ -65,8 +65,8 @@
   fixtures into the repository during a test run.
 - Cover successful generation, idempotency, deterministic output, invalid
   input, collisions, managed-block preservation, all-or-nothing validation,
-  and CLI exit codes. Run Python 3.15 runtime tests for native lazy-import
-  behavior.
+  and CLI exit codes. Run Python 3.14 runtime tests for eager compatibility and
+  Python 3.15 runtime tests for native lazy-import behavior.
 - Keep coverage as high as reasonably possible. Do not add low-value tests that
   only mirror implementation details, and do not exclude reachable production
   code merely to increase the percentage.
@@ -91,7 +91,7 @@
 
 - Run focused tests while iterating, then run the full suite before handoff.
   Report any check that could not run, including the reason; do not imply that
-  unavailable Python 3.15 checks passed.
+  unavailable Python 3.14 or Python 3.15 checks passed.
 - Do not bypass hooks with `--no-verify`. Fix the failure or ask the user about
   a genuine exception.
 

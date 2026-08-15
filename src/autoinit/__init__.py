@@ -1,4 +1,4 @@
-"""Generate explicit, managed package APIs for Python 3.15 and newer."""
+"""Generate explicit, managed package APIs for Python 3.14 and newer."""
 
 from importlib.metadata import PackageNotFoundError, version
 

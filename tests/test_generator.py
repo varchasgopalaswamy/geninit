@@ -26,7 +26,8 @@ def test_recursive_generation_defaults_children_to_protected(tmp_path: Path) -> 
     _module(package / "nested" / "service.py", '__all__ = ("serve",)\n')
     _module(package / "_hidden.py", '__all__ = ("secret",)\n')
 
-    generation = plan([package])
+    config = Config(roots=(package,), requires_python=">=3.15")
+    generation = plan(config=config)
 
     assert tuple(change.path.relative_to(package).as_posix() for change in generation.changes) == (
         "__init__.py",
@@ -40,7 +41,7 @@ def test_recursive_generation_defaults_children_to_protected(tmp_path: Path) -> 
     assert "Widget" not in root_init
     assert "_hidden" not in root_init
     assert "lazy from . import service as service" in nested_init
-    assert not plan([package]).has_changes
+    assert not plan(config=config).has_changes
 
 
 def test_public_visibility_lifts_explicit_exports_and_can_be_eager(
@@ -74,7 +75,9 @@ def test_public_subpackage_propagates_its_generated_api(tmp_path: Path) -> None:
     _managed_init(subpackage, '__public__ = ("api",)\n')
     _managed_init(package, '__public__ = ("features",)\n')
 
-    generation = plan([package])
+    generation = plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    )
     generation.write()
 
     root_content = (package / "__init__.py").read_text(encoding="utf-8")
@@ -98,7 +101,9 @@ def test_generation_preserves_content_outside_the_managed_block(tmp_path: Path) 
     )
     _module(package / "__init__.py", before)
 
-    plan([package]).write()
+    plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    ).write()
 
     after = (package / "__init__.py").read_text(encoding="utf-8")
     prefix, managed_and_suffix = after.split("# <autoinit>", maxsplit=1)
@@ -138,7 +143,9 @@ def test_private_visibility_hides_normal_child_and_publicizes_underscore_child(
         '__public__ = ("_compat",)\n__private__ = ("api",)\n',
     )
 
-    plan([package]).write()
+    plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    ).write()
 
     content = (package / "__init__.py").read_text(encoding="utf-8")
     assert "from . import api" not in content
@@ -323,20 +330,43 @@ def test_symlink_overlapping_and_invalid_roots_are_rejected(tmp_path: Path) -> N
         plan([package])
 
 
-@pytest.mark.parametrize(("eager", "loaded_immediately"), [((), False), (("api.py",), True)])
+@pytest.mark.parametrize(
+    ("requires_python", "eager", "loaded_immediately"),
+    [
+        pytest.param(
+            ">=3.15",
+            (),
+            False,
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 15),
+                reason="native lazy imports require Python 3.15",
+            ),
+        ),
+        (">=3.15", ("api.py",), True),
+        (">=3.14", (), True),
+        (None, (), True),
+    ],
+)
 def test_generated_imports_have_native_runtime_semantics(
     tmp_path: Path,
+    requires_python: str | None,
     eager: tuple[str, ...],
     loaded_immediately: bool,
 ) -> None:
-    """Native lazy imports defer modules while configured eager imports do not."""
+    """Runtime imports follow target support and explicit eager overrides."""
     package = tmp_path / "runtime_package"
     _module(
         package / "api.py",
         '__all__ = ("VALUE",)\nVALUE = 42\n',
     )
     _managed_init(package, '__public__ = ("api",)\n')
-    plan(config=Config(roots=(package,), eager=eager)).write()
+    plan(
+        config=Config(
+            roots=(package,),
+            eager=eager,
+            requires_python=requires_python,
+        )
+    ).write()
 
     sys.path.insert(0, str(tmp_path))
     try:
@@ -348,6 +378,66 @@ def test_generated_imports_have_native_runtime_semantics(
         sys.path.remove(str(tmp_path))
         sys.modules.pop("runtime_package.api", None)
         sys.modules.pop("runtime_package", None)
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "uses_lazy_imports"),
+    [
+        (None, False),
+        (">=3.14", False),
+        (">=3.14,<3.15", False),
+        (">=3.15", True),
+        ("~=3.15", True),
+        ("==3.15.*", True),
+    ],
+)
+def test_generated_import_mode_follows_supported_python_versions(
+    tmp_path: Path,
+    requires_python: str | None,
+    uses_lazy_imports: bool,
+) -> None:
+    """Any declared support below Python 3.15 makes every import eager."""
+    package = tmp_path / "example"
+    _module(package / "api.py", "value = 1\n")
+
+    plan(
+        config=Config(
+            roots=(package,),
+            requires_python=requires_python,
+        )
+    ).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert ("lazy from . import api as api" in content) is uses_lazy_imports
+    assert ("\nfrom . import api as api\n" in content) is not uses_lazy_imports
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "expected_import"),
+    [
+        (">=3.14", "from . import api as api"),
+        (">=3.15", "lazy from . import api as api"),
+    ],
+)
+def test_project_metadata_controls_generated_import_mode(
+    tmp_path: Path,
+    requires_python: str,
+    expected_import: str,
+) -> None:
+    """Planning reads supported Python versions from the target project."""
+    package = tmp_path / "example"
+    _module(package / "api.py", "value = 1\n")
+    project = tmp_path / "pyproject.toml"
+    project.write_text(
+        f'\n[project]\nrequires-python = "{requires_python}"\n'
+        '\n[tool.autoinit]\nroots = ["example"]\n',
+        encoding="utf-8",
+    )
+
+    plan(config_path=project).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert f"\n{expected_import}\n" in content
 
 
 def test_generated_initializer_passes_ruff(tmp_path: Path) -> None:
