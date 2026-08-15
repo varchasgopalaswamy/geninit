@@ -5,8 +5,10 @@
 - Read `PLAN.md` before making architectural or behavioral changes. Treat it as
   the current product specification unless the user explicitly changes a
   decision.
-- Target Python 3.14 and newer only. Do not add compatibility code, syntax
-  fallbacks, or tests for earlier Python versions.
+- Target the geninit runtime at Python 3.15 and newer only. Do not add runtime
+  compatibility code, syntax fallbacks, or tests for earlier Python versions.
+  Continue generating eager imports for target projects that support Python
+  versions earlier than 3.15.
 - Keep the implementation small, direct, and elegant. Prefer a clear function
   or dataclass over a framework, abstraction layer, or speculative extension
   point.
@@ -35,13 +37,13 @@
 ## Python style and design
 
 - Use Ruff as both formatter and linter, with the checked-in line length,
-  Python 3.14 as the target, and `lint.select = ["ALL"]`.
+  Python 3.15 as the target, and `lint.select = ["ALL"]`.
 - Prefer double-quoted strings and Google-style docstrings. Document every
   public module, class, function, method, and exception where its purpose is
   not self-evident.
 - Fully annotate public APIs. Keep internal annotations precise enough for
   Pyrefly to check without suppressions or broad `Any` types.
-- Use modern Python 3.14 language and standard-library features when they make
+- Use modern Python 3.15 language and standard-library features when they make
   the code simpler. In generated files, use native `lazy` imports only when the
   target project's Python constraint permits them, as specified in `PLAN.md`.
 - Prefer immutable data, pure analysis functions, explicit inputs and outputs,
@@ -65,8 +67,9 @@
   fixtures into the repository during a test run.
 - Cover successful generation, idempotency, deterministic output, invalid
   input, collisions, managed-block preservation, all-or-nothing validation,
-  and CLI exit codes. Run Python 3.14 runtime tests for eager compatibility and
-  Python 3.15 runtime tests for native lazy-import behavior.
+  and CLI exit codes. On Python 3.15, test eager output for target projects
+  supporting earlier versions and native lazy-import behavior for 3.15-only
+  target projects.
 - Keep coverage as high as reasonably possible. Do not add low-value tests that
   only mirror implementation details, and do not exclude reachable production
   code merely to increase the percentage.
@@ -91,7 +94,7 @@
 
 - Run focused tests while iterating, then run the full suite before handoff.
   Report any check that could not run, including the reason; do not imply that
-  unavailable Python 3.14 or Python 3.15 checks passed.
+  unavailable Python 3.15 checks passed.
 - Do not bypass hooks with `--no-verify`. Fix the failure or ask the user about
   a genuine exception.
 
@@ -101,7 +104,7 @@
 - Do not create commits, tags, releases, or external changes unless the user
   explicitly requests them.
 - Keep generated output changes separate from handwritten code. Never edit
-  content inside an autoinit-managed block by hand when it can be regenerated.
+  content inside a geninit-managed block by hand when it can be regenerated.
 - Review the final diff for accidental files, secrets, debug output, stale
   placeholders, unnecessary abstractions, and changes outside the requested
   scope.

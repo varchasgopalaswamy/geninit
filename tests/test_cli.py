@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
 
-from autoinit.cli import cli, main
+from geninit.cli import cli, main
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -42,7 +42,7 @@ def test_cli_write_check_diff_and_version(tmp_path: Path) -> None:
 
     version = runner.invoke(cli, ["--version"])
     assert version.exit_code == 0
-    assert version.output.startswith("autoinit, version 0.1.0")
+    assert version.output.startswith("geninit, version 0.1.0")
 
 
 def test_cli_combines_configured_and_positional_roots(tmp_path: Path) -> None:
@@ -55,7 +55,7 @@ def test_cli_combines_configured_and_positional_roots(tmp_path: Path) -> None:
     (additional / "api.py").write_text("value = 2\n", encoding="utf-8")
     project = tmp_path / "pyproject.toml"
     project.write_text(
-        '[tool.autoinit]\nroots = ["configured"]\n',
+        '[tool.geninit]\nroots = ["configured"]\n',
         encoding="utf-8",
     )
 

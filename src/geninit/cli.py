@@ -1,4 +1,4 @@
-"""Click command-line interface for autoinit."""
+"""Click command-line interface for geninit."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import click
 
-from autoinit import __version__
-from autoinit.errors import AutoInitError
-from autoinit.generator import plan
+from geninit import __version__
+from geninit.errors import GenInitError
+from geninit.generator import plan
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -62,7 +62,7 @@ class _UsageClickError(click.UsageError):
     count=True,
     help="Report when no files need updating.",
 )
-@click.version_option(version=__version__, prog_name="autoinit")
+@click.version_option(version=__version__, prog_name="geninit")
 def cli(
     roots: tuple[Path, ...],
     config: Path | None,
@@ -102,7 +102,7 @@ def cli(
             raise click.exceptions.Exit(2)
         if verbose:
             click.echo("all package initializers are current")
-    except AutoInitError as error:
+    except GenInitError as error:
         raise _GenerationClickError(str(error)) from error
 
 
@@ -117,7 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         invocation failures, or two when files were changed or would change.
     """
     try:
-        result = cli.main(args=argv, prog_name="autoinit", standalone_mode=False)
+        result = cli.main(args=argv, prog_name="geninit", standalone_mode=False)
     except click.ClickException as error:
         error.show()
         return 1

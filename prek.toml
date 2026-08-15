@@ -38,18 +38,31 @@ id = "trailing-whitespace"
 repo = "local"
 
 [[repos.hooks]]
+id = "geninit"
+name = "Generate python __init__.py files"
+entry = "uv run --locked --no-sync geninit"
+language = "system"
+pass_filenames = false
+always_run = true
+stages = ["pre-commit"]
+
+[[repos.hooks]]
 id = "ruff-format"
 name = "Ruff format"
-entry = "uv run --locked --no-sync ruff format --check"
+entry = "uv run --locked --no-sync ruff format --check ."
 language = "system"
 types_or = ["python", "pyi"]
+pass_filenames = false
+always_run = true
 
 [[repos.hooks]]
 id = "ruff-check"
 name = "Ruff lint"
-entry = "uv run --locked --no-sync ruff check --force-exclude"
+entry = "uv run --locked --no-sync ruff check --force-exclude ."
 language = "system"
 types_or = ["python", "pyi"]
+pass_filenames = false
+always_run = true
 
 [[repos.hooks]]
 id = "pyrefly"

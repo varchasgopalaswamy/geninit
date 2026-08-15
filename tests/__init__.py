@@ -1,1 +1,1 @@
-"""Test suite for autoinit."""
+"""Test suite for geninit."""

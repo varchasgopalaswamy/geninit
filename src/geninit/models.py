@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ("Config", "GenerationPlan")
+
 from dataclasses import dataclass
 import difflib
 import os
@@ -9,7 +11,7 @@ from pathlib import Path
 import stat
 import tempfile
 
-from autoinit.errors import OwnershipError
+from geninit.errors import OwnershipError
 
 
 @dataclass(frozen=True, slots=True)

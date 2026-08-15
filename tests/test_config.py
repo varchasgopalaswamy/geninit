@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from autoinit import Config
-from autoinit.config import load_config, supports_native_lazy_imports
-from autoinit.errors import ConfigurationError
+from geninit import Config
+from geninit.config import load_config, supports_native_lazy_imports
+from geninit.errors import ConfigurationError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,7 +25,7 @@ def test_load_config_resolves_values_relative_to_project(tmp_path: Path) -> None
 [project]
 requires-python = ">=3.15"
 
-[tool.autoinit]
+[tool.geninit]
 roots = ["src/example"]
 exclude = ["**/tests/**"]
 eager = ["core.py"]
@@ -49,7 +49,7 @@ eager = ["core.py"]
     [
         ('roots = "src/example"', "roots must be an array of strings"),
         ('roots = ["src/example", "src/example"]', "roots contains duplicates"),
-        ("unknown = true", "unknown [tool.autoinit] option"),
+        ("unknown = true", "unknown [tool.geninit] option"),
     ],
 )
 def test_load_config_rejects_invalid_options(
@@ -59,7 +59,7 @@ def test_load_config_rejects_invalid_options(
 ) -> None:
     """Malformed and unknown options fail with actionable messages."""
     project = tmp_path / "pyproject.toml"
-    project.write_text(f"[tool.autoinit]\n{table}\n", encoding="utf-8")
+    project.write_text(f"[tool.geninit]\n{table}\n", encoding="utf-8")
 
     with pytest.raises(ConfigurationError, match=re.escape(message)):
         load_config(project)
@@ -74,7 +74,7 @@ def test_load_config_without_project_returns_defaults(tmp_path: Path) -> None:
     ("content", "message"),
     [
         ("tool = []\n", "[tool] must be a table"),
-        ("[tool]\nautoinit = []\n", "[tool.autoinit] must be a table"),
+        ("[tool]\ngeninit = []\n", "[tool.geninit] must be a table"),
         ("project = []\n", "[project] must be a table"),
         (
             "[project]\nrequires-python = []\n",
@@ -84,7 +84,7 @@ def test_load_config_without_project_returns_defaults(tmp_path: Path) -> None:
             '[project]\nrequires-python = "not a specifier"\n',
             "project.requires-python is not a valid version specifier",
         ),
-        ('[tool.autoinit]\nroots = [""]\n', "entries must be nonempty POSIX paths"),
+        ('[tool.geninit]\nroots = [""]\n', "entries must be nonempty POSIX paths"),
     ],
 )
 def test_load_config_rejects_invalid_table_shapes(

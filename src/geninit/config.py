@@ -1,4 +1,4 @@
-"""Load and validate ``[tool.autoinit]`` configuration."""
+"""Load and validate ``[tool.geninit]`` configuration."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 from packaging.specifiers import InvalidSpecifier, Specifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from autoinit.errors import ConfigurationError
-from autoinit.models import Config
+from geninit.errors import ConfigurationError
+from geninit.models import Config
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -24,7 +24,7 @@ def load_config(
     *,
     start: str | Path | None = None,
 ) -> Config:
-    """Load autoinit configuration from a ``pyproject.toml``.
+    """Load geninit configuration from a ``pyproject.toml``.
 
     Args:
         path: Explicit configuration file. When omitted, search upward.
@@ -35,7 +35,7 @@ def load_config(
         Validated configuration with absolute package roots.
 
     Raises:
-        ConfigurationError: If the file or its autoinit table is invalid.
+        ConfigurationError: If the file or its geninit table is invalid.
     """
     project_file = _resolve_project_file(path, start=start)
     if project_file is None:
@@ -53,14 +53,14 @@ def load_config(
     if not isinstance(tool, dict):
         msg = f"{project_file}: [tool] must be a table"
         raise ConfigurationError(msg)
-    raw = tool.get("autoinit")
+    raw = tool.get("geninit")
     if raw is None:
         return Config(
             project_file=project_file,
             requires_python=requires_python,
         )
     if not isinstance(raw, dict):
-        msg = f"{project_file}: [tool.autoinit] must be a table"
+        msg = f"{project_file}: [tool.geninit] must be a table"
         raise ConfigurationError(msg)
 
     _reject_unknown_keys(project_file, raw)
@@ -70,7 +70,7 @@ def load_config(
     base = project_file.parent
     roots = tuple(_absolute_path(base, root) for root in root_strings)
     if len(set(roots)) != len(roots):
-        msg = f"{project_file}: tool.autoinit.roots contains duplicates"
+        msg = f"{project_file}: tool.geninit.roots contains duplicates"
         raise ConfigurationError(msg)
     return Config(
         project_file=project_file,
@@ -164,7 +164,7 @@ def _reject_unknown_keys(path: Path, raw: Mapping[str, Any]) -> None:
     unknown = sorted(set(raw) - {"roots", "exclude", "eager"})
     if unknown:
         names = ", ".join(unknown)
-        msg = f"{path}: unknown [tool.autoinit] option(s): {names}"
+        msg = f"{path}: unknown [tool.geninit] option(s): {names}"
         raise ConfigurationError(msg)
 
 
@@ -175,13 +175,13 @@ def _string_list(
 ) -> tuple[str, ...]:
     value = raw.get(key, [])
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        msg = f"{path}: tool.autoinit.{key} must be an array of strings"
+        msg = f"{path}: tool.geninit.{key} must be an array of strings"
         raise ConfigurationError(msg)
     if any(not item or "\\" in item for item in value):
-        msg = f"{path}: tool.autoinit.{key} entries must be nonempty POSIX paths"
+        msg = f"{path}: tool.geninit.{key} entries must be nonempty POSIX paths"
         raise ConfigurationError(msg)
     if len(set(value)) != len(value):
-        msg = f"{path}: tool.autoinit.{key} contains duplicates"
+        msg = f"{path}: tool.geninit.{key} contains duplicates"
         raise ConfigurationError(msg)
     return tuple(value)
 

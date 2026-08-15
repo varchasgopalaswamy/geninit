@@ -1,0 +1,9 @@
+- id: geninit
+  name: Generate python __init__.py files
+  description: Generate and update managed Python python __init__.py files.
+  entry: geninit
+  language: python
+  language_version: python3.15
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]

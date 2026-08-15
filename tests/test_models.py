@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from autoinit.errors import OwnershipError
-from autoinit.models import FileChange, GenerationPlan
+from geninit.errors import OwnershipError
+from geninit.models import FileChange, GenerationPlan
 
 if TYPE_CHECKING:
     from pathlib import Path
