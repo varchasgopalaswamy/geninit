@@ -1,0 +1,35 @@
+target-version = "py315"
+
+line-length = 99
+[lint]
+select = [
+    "ALL",
+]
+allowed-confusables = ["ρ"]
+extend-safe-fixes = ["EM102", "EM101", "SIM108", "RET504", "C408", "D200", "RUF059", "RUF052", "TC003", "ICN001", "F401"]
+ignore = [
+    # These rules conflict with Ruff's formatter.
+    "COM812",
+    "ISC001",
+    "C901", "PLR0912", # Function complexity is fake news
+    "RET505", # I hate this
+]
+logger-objects = ["logging_setup.logger", "loguru.logger"]
+
+[lint.isort]
+from-first = false
+force-sort-within-sections = true
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "FBT001", # Boolean parameters are useful in parametrized tests.
+    "PLR2004", # Expected literal values make tests easier to read.
+    "S101", # Pytest uses plain assert statements for rich diagnostics.
+]
+
+[format]
+docstring-code-format = true
+line-ending = "lf"
