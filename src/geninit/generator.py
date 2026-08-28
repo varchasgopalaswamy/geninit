@@ -28,7 +28,12 @@ if TYPE_CHECKING:
 START_MARKER = "# <geninit>"
 END_MARKER = "# </geninit>"
 
-_VISIBILITY_NAMES = ("__public__", "__protected__", "__private__")
+_VISIBILITY_NAMES = (
+    "__public__",
+    "__protected__",
+    "__flattened__",
+    "__private__",
+)
 _IGNORED_DIRECTORIES = frozenset(
     {
         ".eggs",
@@ -274,16 +279,12 @@ def _children_for(
     return tuple(sorted(children, key=lambda child: child.name))
 
 
-def _render_package(
+def _resolve_visibility(
     init_path: Path,
     children: Sequence[_Child],
     visibility: dict[str, tuple[str, ...]],
-    eager_patterns: Sequence[str],
-    *,
-    use_lazy_imports: bool,
-) -> tuple[str, tuple[str, ...]]:
-    child_by_name = {child.name: child for child in children}
-    known = set(child_by_name)
+) -> tuple[frozenset[str], frozenset[str]]:
+    known = {child.name for child in children}
     declared = {kind: set(names) for kind, names in visibility.items()}
     for kind, names in declared.items():
         unknown = names - known
@@ -301,19 +302,41 @@ def _render_package(
 
     public = declared["__public__"]
     protected = declared["__protected__"]
+    flattened = declared["__flattened__"]
     private = declared["__private__"]
-    exposed = tuple(
-        child
+    module_children = frozenset(
+        child.name
         for child in children
         if child.name not in private
+        and child.name not in flattened
         and (not child.name.startswith("_") or child.name in public or child.name in protected)
     )
+    return module_children, frozenset(public | flattened)
+
+
+def _render_package(
+    init_path: Path,
+    children: Sequence[_Child],
+    visibility: dict[str, tuple[str, ...]],
+    eager_patterns: Sequence[str],
+    *,
+    use_lazy_imports: bool,
+) -> tuple[str, tuple[str, ...]]:
+    module_children, lifted_children = _resolve_visibility(
+        init_path,
+        children,
+        visibility,
+    )
+    imported_children = module_children | {
+        child.name for child in children if child.name in lifted_children and child.exports
+    }
 
     origins: dict[str, Path] = {}
-    for child in exposed:
-        origins[child.name] = child.source
-    for child in exposed:
-        if child.name not in public:
+    for child in children:
+        if child.name in imported_children:
+            origins[child.name] = child.source
+    for child in children:
+        if child.name not in lifted_children:
             continue
         for exported in child.exports:
             previous = origins.get(exported)
@@ -326,17 +349,20 @@ def _render_package(
             origins[exported] = child.source
 
     imports: list[str] = []
-    for child in exposed:
+    for child in children:
+        if child.name not in imported_children:
+            continue
         eager = not use_lazy_imports or _matches(child.eager_path, eager_patterns)
         prefix = "" if eager else "lazy "
-        imports.append(f"{prefix}from . import {child.name}")
-        if child.name in public:
+        if child.name in module_children:
+            imports.append(f"{prefix}from . import {child.name}")
+        if child.name in lifted_children:
             imports.extend(f"{prefix}from .{child.name} import {name}" for name in child.exports)
     imports.sort()
 
-    module_exports = tuple(child.name for child in exposed)
+    module_exports = tuple(child.name for child in children if child.name in module_children)
     lifted_exports = tuple(
-        name for child in exposed if child.name in public for name in child.exports
+        name for child in children if child.name in lifted_children for name in child.exports
     )
     exports = tuple(sorted((*module_exports, *lifted_exports)))
     lines = [START_MARKER, *imports]

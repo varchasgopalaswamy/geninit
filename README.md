@@ -74,6 +74,7 @@ different behavior:
 ```python
 __public__ = ("api",)
 __protected__ = ("models",)
+__flattened__ = ("implementation",)
 __private__ = ("legacy",)
 
 # <geninit>
@@ -83,6 +84,7 @@ __private__ = ("legacy",)
 - A public child exposes the module and the names listed in that child's
   `__all__`.
 - A protected child exposes only the module.
+- A flattened child exposes only the names listed in the child's `__all__`.
 - A private child is not exposed by the package.
 
 For example, `src/acme/api.py` might contain:
@@ -100,10 +102,15 @@ def connect() -> Client:
 
 With `api` declared public, users can then write either
 `from acme import Client` or `from acme import api`.
+Declaring `api` flattened instead would support the first form without adding
+`api` to the package's generated `__all__` or propagating that child name
+through public parent packages.
+This controls the generated API; importing a child's contents may still cause
+Python to bind the child as a runtime package attribute.
 
-The `__public__`, `__protected__`, `__private__`, and child `__all__`
-declarations must contain literal strings. geninit reports an error for unknown
-children, duplicate names, overlapping declarations, or conflicting exports.
+The `__public__`, `__protected__`, `__flattened__`, `__private__`, and child
+`__all__` declarations must contain literal strings, must be unique and must
+resolve to known symbols.
 
 ## Managed files
 

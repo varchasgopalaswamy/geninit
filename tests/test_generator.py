@@ -70,6 +70,28 @@ def test_public_visibility_lifts_explicit_exports_and_can_be_eager(
     assert '__all__ = (\n    "Widget",\n    "api",\n)' in content
 
 
+def test_flattened_visibility_lifts_exports_without_exposing_child(
+    tmp_path: Path,
+) -> None:
+    """Flattening overrides private defaults and omits the child module name."""
+    package = tmp_path / "example"
+    _module(
+        package / "_api.py",
+        '__all__ = ("Widget",)\n\nclass Widget: ...\n\nclass Internal: ...\n',
+    )
+    _managed_init(package, '__flattened__ = ("_api",)\n')
+
+    plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    ).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "lazy from ._api import Widget" in content
+    assert "lazy from . import _api" not in content
+    assert "Internal" not in content
+    assert '__all__ = ("Widget",)' in content
+
+
 def test_public_subpackage_propagates_its_generated_api(tmp_path: Path) -> None:
     """Bottom-up planning lets a public subpackage lift its generated exports."""
     package = tmp_path / "example"
@@ -88,6 +110,49 @@ def test_public_subpackage_propagates_its_generated_api(tmp_path: Path) -> None:
     assert "lazy from .features import Widget, api" in root_content
     assert " as " not in root_content
     assert '__all__ = (\n    "Widget",\n    "api",\n    "features",\n)' in root_content
+
+
+def test_public_subpackages_propagate_flattened_contents_without_child_collision(
+    tmp_path: Path,
+) -> None:
+    """Same-named flattened modules do not collide when their packages propagate."""
+    package = tmp_path / "example"
+    hydro = package / "hydro"
+    thermal = package / "thermal"
+    _module(
+        hydro / "operator.py",
+        '__all__ = ("HydroOperator",)\nclass HydroOperator: ...\n',
+    )
+    _module(
+        thermal / "operator.py",
+        '__all__ = ("ThermalOperator",)\nclass ThermalOperator: ...\n',
+    )
+    _managed_init(hydro, '__flattened__ = ("operator",)\n')
+    _managed_init(thermal, '__flattened__ = ("operator",)\n')
+    _managed_init(package, '__public__ = ("hydro", "thermal")\n')
+
+    plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    ).write()
+
+    hydro_content = (hydro / "__init__.py").read_text(encoding="utf-8")
+    thermal_content = (thermal / "__init__.py").read_text(encoding="utf-8")
+    root_content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "lazy from .operator import HydroOperator" in hydro_content
+    assert "lazy from .operator import ThermalOperator" in thermal_content
+    assert "from . import operator" not in hydro_content
+    assert "from . import operator" not in thermal_content
+    assert "lazy from .hydro import HydroOperator" in root_content
+    assert "lazy from .thermal import ThermalOperator" in root_content
+    assert '    "operator",' not in root_content
+    assert (
+        "__all__ = (\n"
+        '    "HydroOperator",\n'
+        '    "ThermalOperator",\n'
+        '    "hydro",\n'
+        '    "thermal",\n'
+        ")" in root_content
+    )
 
 
 def test_generation_preserves_content_outside_the_managed_block(tmp_path: Path) -> None:
@@ -259,19 +324,56 @@ def test_visibility_errors_and_export_collisions(tmp_path: Path) -> None:
     with pytest.raises(CollisionError, match=r"Shared.*collides"):
         plan([package])
 
+    _managed_init(package, '__flattened__ = ("one", "two")\n')
+    with pytest.raises(CollisionError, match=r"Shared.*collides"):
+        plan([package])
+
     _managed_init(
         package,
-        '__public__ = ("one",)\n__private__ = ("one",)\n',
+        '__public__ = ("one",)\n__flattened__ = ("one",)\n',
     )
     with pytest.raises(AnalysisError, match="overlap"):
         plan([package])
 
 
-def test_unknown_visibility_child_is_rejected(tmp_path: Path) -> None:
+def test_flattened_child_name_remains_reserved_for_collision_checks(
+    tmp_path: Path,
+) -> None:
+    """A lifted symbol cannot overwrite the runtime binding of a flattened child."""
+    package = tmp_path / "example"
+    _module(package / "operator.py", '__all__ = ("Operator",)\n')
+    _module(package / "api.py", '__all__ = ("operator",)\n')
+    _managed_init(package, '__flattened__ = ("api", "operator")\n')
+
+    with pytest.raises(CollisionError, match=r"operator.*collides"):
+        plan([package])
+
+
+def test_empty_flattened_child_does_not_reserve_unimported_module_name(
+    tmp_path: Path,
+) -> None:
+    """A flattened child with no exports contributes no runtime binding."""
+    package = tmp_path / "example"
+    _module(package / "operator.py", "__all__ = ()\n")
+    _module(package / "api.py", '__all__ = ("operator",)\noperator = object()\n')
+    _managed_init(package, '__flattened__ = ("api", "operator")\n')
+
+    plan(
+        config=Config(roots=(package,), requires_python=">=3.15"),
+    ).write()
+
+    content = (package / "__init__.py").read_text(encoding="utf-8")
+    assert "lazy from .api import operator" in content
+    assert "from .operator" not in content
+    assert '__all__ = ("operator",)' in content
+
+
+@pytest.mark.parametrize("declaration", ["__public__", "__flattened__"])
+def test_unknown_visibility_child_is_rejected(tmp_path: Path, declaration: str) -> None:
     """Misspelled visibility declarations report their unknown child."""
     package = tmp_path / "example"
     _module(package / "api.py", "value = 1\n")
-    _managed_init(package, '__public__ = ("missing",)\n')
+    _managed_init(package, f'{declaration} = ("missing",)\n')
 
     with pytest.raises(AnalysisError, match=r"unknown child.*missing"):
         plan([package])
